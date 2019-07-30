@@ -1,0 +1,80 @@
+version: '2.1'
+
+volumes:
+    kong_data: {}
+
+networks:
+  kong-net:
+services:
+  kong-database:
+    image: harbor.tusdao.com/library/postgres:9.6
+    environment:
+      POSTGRES_USER: kong
+      # POSTGRES_PASSWORD: kong
+      POSTGRES_DB: kong
+    networks:
+      - kong-net
+    ports:
+      - "5432:5432"
+    restart: always
+    volumes:
+      - kong_data:/var/lib/postgresql/data
+
+
+  kong-migrations:
+    image: harbor.tusdao.com/library/kong:latest
+    command: kong migrations bootstrap
+    depends_on:
+      - kong-database
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: kong-database
+      # KONG_PG_PASSWORD: kong
+      KONG_PG_USER: kong
+    links:
+      - kong-database:kong-database
+    networks:
+      - kong-net
+    restart: always
+  
+  kong:
+    image: harbor.tusdao.com/library/kong:latest
+    depends_on:
+      - kong-database
+      - kong-migrations
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: kong-database
+      # KONG_PG_PASSWORD: kong
+      KONG_PG_USER: kong
+      KONG_CASSANDRA_CONTACT_POINTS: kong-database
+      KONG_ADMIN_LISTEN: '0.0.0.0:8001,0.0.0.0:8443 ssl'
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+    networks:
+      - kong-net
+    ports:
+      - "8000:8000/tcp"
+      - "8001:8001/tcp"
+      - "8443:8443/tcp"
+      - "8444:8444/tcp"
+    restart: always
+
+  konga:
+    image: harbor.tusdao.com/library/konga:latest
+    depends_on:
+      - kong-database
+    links:
+      - kong:kong
+    environment:
+      DB_ADAPTER: postgres
+      DB_URI: postgres://kong@kong-database:5432/kong
+      NODE_ENV: development
+    networks:
+      - kong-net
+    ports: 
+      - "1337:1337"
+    restart: always
+  
